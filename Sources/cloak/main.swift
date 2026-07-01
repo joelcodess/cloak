@@ -50,6 +50,7 @@ case "scrub":
         } else {
             print(result.scrubbed)
         }
+        for w in result.warnings { FileHandle.standardError.write(Data("⚠ \(w)\n".utf8)) }
     } catch {
         FileHandle.standardError.write(Data("error: \(error)\n".utf8)); exit(1)
     }

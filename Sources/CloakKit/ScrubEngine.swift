@@ -16,6 +16,9 @@ public struct ScrubResult: @unchecked Sendable {  // map is a class, treated rea
     public var scrubbed: String
     public var spans: [ScrubbedSpan]
     public var map: SubstitutionMap
+    /// Non-fatal degradations (e.g. Apple's model guardrail refused a section).
+    /// Surfaced so callers can tell the user a section was only pattern-scrubbed.
+    public var warnings: [String] = []
 }
 
 public struct ScrubbedSpan: Identifiable, Sendable {
@@ -44,6 +47,7 @@ public struct ScrubEngine: Sendable {
         let map = SubstitutionMap()
         var spans: [ScrubbedSpan] = []
         var seenReal = Set<String>()
+        var warnings: [String] = []
 
         // 1) Regex fast-pass — always scrubbed, deterministic.
         for hit in Detectors.scan(text) where seenReal.insert(hit.text).inserted {
@@ -52,9 +56,27 @@ public struct ScrubEngine: Sendable {
                                       source: "regex", essential: false, scrubbed: true))
         }
 
-        // 2) On-device contextual NER + relevance, chunked over the input.
+        // 2) Contextual layer. Tabular data (CSV) is handled column-wise —
+        //    deterministic and far more reliable than model NER on cells, which
+        //    grabs whole rows. Free-text goes to the on-device model, chunked.
+        if Tabular.looksLikeCSV(text) {
+            spans.append(contentsOf: Tabular.detect(text, map: map, seen: &seenReal))
+        } else {
+        // Model availability is a hard failure (checked once); a per-chunk
+        // generation error (e.g. Apple's safety guardrail false-firing) is NOT —
+        // we skip that chunk's contextual detection, keep the regex fast-pass,
+        // and warn, rather than aborting the whole document scrub.
+        if let reason = FoundationModelSpanFinder.availabilityError() {
+            throw FoundationModelError.unavailable(reason)
+        }
         for chunk in Self.chunk(text, budget: chunkBudget, overlap: chunkOverlap) {
-            let detected = try await finder.detect(in: chunk)
+            let detected: [PIISpan]
+            do {
+                detected = try await finder.detect(in: chunk)
+            } catch {
+                warnings.append("A section couldn't be analyzed by the on-device model (\(error)); only pattern-based detectors ran on it — review that section for names/orgs.")
+                continue
+            }
             for span in detected where seenReal.insert(span.text).inserted {
                 // Essential contextual spans are kept (not scrubbed); everything
                 // else is bound to a coherent fake.
@@ -69,6 +91,7 @@ public struct ScrubEngine: Sendable {
                                               essential: false, scrubbed: true))
                 }
             }
+        }
         }
 
         // 3+4) Apply substitution for everything bound in the map.
@@ -89,7 +112,7 @@ public struct ScrubEngine: Sendable {
             }
         }
 
-        return ScrubResult(scrubbed: scrubbed, spans: spans, map: map)
+        return ScrubResult(scrubbed: scrubbed, spans: spans, map: map, warnings: warnings)
     }
 
     /// Split into overlapping windows on paragraph/sentence boundaries where

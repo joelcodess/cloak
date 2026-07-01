@@ -54,8 +54,14 @@ you ──▶ Claude Code ──/v1/messages──▶  cloak proxy (localhost)  
 A pipeline modelled on praxis-cloak's `fast_scrub`, adapted to one local model:
 
 1. **Regex fast-pass** (`Detectors.swift`) — emails, phones, SSNs, credit cards
-   (Luhn-checked), IPs, API keys. Deterministic, no model, no recall risk. This
-   is the biggest de-risker: hard identifiers never depend on the LLM.
+   (Luhn-checked), IPs, API keys (incl. provider keys like `sk_live_…`/`acct_…`),
+   internal hostnames. Deterministic, no model, no recall risk. This is the
+   biggest de-risker: hard identifiers never depend on the LLM.
+1b. **CSV / tabular path** (`Tabular.swift`) — the on-device model does poor NER
+   on tabular cells (it grabs whole rows), so CSV input is detected and scrubbed
+   **column-wise**: headers are classified (name/org/location/identifier vs.
+   non-PII like title/department/status) and PII columns are scrubbed
+   deterministically. This is the reliable path for exports like a user roster.
 2. **On-device contextual NER + relevance** (`FoundationModelSpanFinder.swift`) —
    Apple's `SystemLanguageModel` finds names, employers, locations, job titles,
    relationships, and internal project codenames, and flags whether each is
@@ -131,6 +137,9 @@ contextual NER**. The eval harness exists to measure and shrink that gap.
 **Known gaps** (all surfaced by `evals/`):
 - Bare first names in context ("my colleague Devon") and invented codenames
   ("Bluejay", "Foundry") are sometimes missed by the model.
+- CSV scrubbing is header-driven: a free-text/"notes" column or an unrecognized
+  header is left untouched (not model-scanned), and fakes are bound per cell, so
+  a full-name column won't match its first/last columns after scrubbing.
 - Detectors are US/English-centric; non-US identifiers (IBAN, national IDs) fall
   to the weaker model layer.
 - Proxy v0 leaves `tool_use.input` JSON un-scrubbed (text content blocks only).

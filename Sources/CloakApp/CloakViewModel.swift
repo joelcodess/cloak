@@ -65,6 +65,9 @@ final class CloakViewModel: ObservableObject {
                 self.currentMap = result.map
                 let scrubbedCount = result.spans.filter { $0.scrubbed }.count
                 self.statusText = "Scrubbed \(scrubbedCount) item(s); mapping saved."
+                // Non-fatal degradations (e.g. model guardrail refused a section).
+                self.availabilityWarning = result.warnings.isEmpty ? nil
+                    : "\(result.warnings.count) section(s) were only pattern-scrubbed by the fast-pass; review them for names/orgs."
                 self.refreshRecent()
                 self.selectedRecordID = record.id
             } catch {

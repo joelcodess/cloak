@@ -61,8 +61,14 @@ python3 evals/harness.py --strategies baseline,dual-lens --split holdout   # con
 ```
 
 ## Known follow-ups (strategy-independent, surfaced by the eval)
-- **Structured-ID leaks** (`#4482`, `48213`, `C02XR4KTJGH5`, `acct_…`) are missing
-  *regex detectors*, not a model failure — a cheap deterministic win.
-- **Over-scrub** on essential values (Ontario/Okta/Ireland/Germany) is the
-  `essential`-gate under-firing — a separate relevance-tuning problem, uniform
-  across all strategies.
+- **Provider keys + internal hostnames**: FIXED — added `sk_live_`/`acct_…` and
+  `.internal`/`.corp` detectors (`Detectors.swift`).
+- **Tabular data (CSV)**: FIXED — the model does poor NER on cells (grabs whole
+  rows), so CSV is now detected and scrubbed column-wise (`Tabular.swift`).
+- **Model guardrail refusals**: FIXED — Apple's on-device safety guardrail
+  false-fires on some benign prompts; a refused chunk no longer aborts the whole
+  scrub (regex still runs; a warning is surfaced via `ScrubResult.warnings`).
+- **Remaining, still open**: bare numeric case/ticket IDs (`#4482`, `48213`) are
+  deliberately NOT blanket-scrubbed (would wreck version/issue numbers in code);
+  `essential`-gate over-scrub (Ontario/Okta/Ireland) is a relevance-tuning
+  problem; job-title labels are debatable PII.
