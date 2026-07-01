@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+#
+# claude-cloaked — launch Claude Code with the local cloak PII-scrubbing proxy
+# in front of it. Auto-starts the proxy if it isn't already running, then execs
+# `claude` with ANTHROPIC_BASE_URL pointed at it.
+#
+# Pass-through auth by default: the proxy is started WITHOUT an API key, so it
+# forwards Claude Code's existing credentials (subscription OAuth bearer or
+# x-api-key) verbatim to Anthropic — it just scrubs the request body. This is
+# what makes it work with a Pro/Max subscription, no Console key required.
+#
+# To force API-key mode instead (proxy holds the key), set CLOAK_API_KEY_MODE=1
+# and export ANTHROPIC_API_KEY before running.
+#
+#   install:  ln -sf "$PWD/claude-cloaked" ~/.local/bin/claude-cloaked
+#   use:      claude-cloaked            # same args as `claude`
+#
+# Env overrides: CLOAK_PORT (8765), CLOAK_BIN (~/.local/bin/cloak),
+#                CLOAK_LOG (${TMPDIR}/cloak-proxy.log)
+
+set -euo pipefail
+
+PORT="${CLOAK_PORT:-8765}"
+CLOAK_BIN="${CLOAK_BIN:-$HOME/.local/bin/cloak}"
+LOG="${CLOAK_LOG:-${TMPDIR:-/tmp}/cloak-proxy.log}"
+
+if [[ ! -x "$CLOAK_BIN" ]]; then
+  echo "claude-cloaked: cloak binary not found at $CLOAK_BIN" >&2
+  echo "  build it:  (cd tools/cloak && swift build -c release && ln -sf \"\$PWD/.build/release/cloak\" ~/.local/bin/cloak)" >&2
+  exit 1
+fi
+
+port_in_use() { lsof -ti "tcp:$PORT" >/dev/null 2>&1; }
+
+if port_in_use; then
+  echo "▸ cloak proxy already listening on :$PORT" >&2
+else
+  echo "▸ starting cloak proxy on :$PORT (log: $LOG)" >&2
+  if [[ "${CLOAK_API_KEY_MODE:-0}" == "1" ]]; then
+    # API-key mode: proxy holds ANTHROPIC_API_KEY and injects x-api-key.
+    nohup "$CLOAK_BIN" proxy --port "$PORT" >"$LOG" 2>&1 &
+  else
+    # Pass-through mode (default): strip any ambient key so the proxy forwards
+    # Claude Code's own subscription/OAuth credentials unchanged.
+    nohup env -u ANTHROPIC_API_KEY "$CLOAK_BIN" proxy --port "$PORT" >"$LOG" 2>&1 &
+  fi
+  # Wait up to ~5s for the listener to bind.
+  for _ in $(seq 1 50); do
+    port_in_use && break
+    sleep 0.1
+  done
+  if ! port_in_use; then
+    echo "claude-cloaked: proxy failed to start — see $LOG" >&2
+    exit 1
+  fi
+fi
+
+# Hand off to Claude Code. In pass-through mode we must NOT set ANTHROPIC_API_KEY
+# here, so Claude Code uses its existing (subscription) login and sends a token
+# the proxy can forward.
+exec env ANTHROPIC_BASE_URL="http://localhost:$PORT" claude "$@"

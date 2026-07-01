@@ -1,0 +1,24 @@
+# Swift / SwiftPM
+.build/
+.swiftpm/
+Package.resolved
+
+# Built app bundle (produced by scripts/make-app.sh)
+Cloak.app/
+
+# Eval cache + transient logs (results .json are kept as artifacts)
+evals/.cache/
+*.log
+
+# Local scrub outputs
+*.cloakmap.json
+*.scrubbed.*
+
+# macOS
+.DS_Store
+
+# Transient eval result artifacts (regenerable; keep TOURNAMENT.md for the numbers)
+evals/tournament-dev.json
+evals/tournament-holdout.json
+evals/final-score.json
+evals/tournament-specs.json
