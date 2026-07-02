@@ -11,6 +11,10 @@ on-device detection, no third-party service. Ships in two forms:
 - **cloak CLI** — `scrub`, `scrub-file`, `rehydrate`, `doctor`, and an
   (experimental) Anthropic-compatible `proxy`.
 
+<p align="center">
+  <img src="assets/screenshot.png" alt="Cloak — a native macOS app that scrubs PII from documents on-device" width="820">
+</p>
+
 ## The macOS app
 
 ```sh
