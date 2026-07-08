@@ -21,7 +21,10 @@ public enum Tabular {
     /// comma header with >=3 columns, >=2 data rows, and >=80% of data rows with
     /// EXACTLY the header's field count (prose comma-counts vary; CSV rows don't).
     public static func looksLikeCSV(_ text: String) -> Bool {
-        let lines = text.split(separator: "\n", omittingEmptySubsequences: true).map(String.init)
+        // components(separatedBy: .newlines), not split(separator: "\n"):
+        // "\r\n" is a single grapheme cluster in Swift, so a Character split on
+        // "\n" never fires on CRLF files and the whole document reads as 1 line.
+        let lines = text.components(separatedBy: .newlines).filter { !$0.isEmpty }
         guard lines.count >= 3 else { return false }               // header + >=2 data rows
         let cols = parseRow(lines[0]).count
         guard cols >= 3, lines[0].contains(",") else { return false }
@@ -36,7 +39,12 @@ public enum Tabular {
     }
 
     static func classify(header: String) -> ColumnKind {
-        let h = header.lowercased().trimmingCharacters(in: .whitespaces)
+        // snake_case / kebab-case exports ("contact_name", "org-name") must
+        // match the space-separated needles below.
+        let h = header.lowercased()
+            .replacingOccurrences(of: "_", with: " ")
+            .replacingOccurrences(of: "-", with: " ")
+            .trimmingCharacters(in: .whitespaces)
         func has(_ needles: [String]) -> Bool { needles.contains { h.contains($0) } }
 
         // Username / email / login columns → identifier (emails also caught by regex).
@@ -68,7 +76,7 @@ public enum Tabular {
     /// Detect + bind PII cells for a CSV `text`, returning scrubbed spans. Cells
     /// are bound in `map`; `seen` dedups across the whole document.
     public static func detect(_ text: String, map: SubstitutionMap, seen: inout Set<String>) -> [ScrubbedSpan] {
-        let lines = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        let lines = text.components(separatedBy: .newlines)   // CRLF-safe; see looksLikeCSV
         guard let headerLine = lines.first(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty }) else { return [] }
         let headers = parseRow(headerLine)
         let kinds = headers.map(classify)

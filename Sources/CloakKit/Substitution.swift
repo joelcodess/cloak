@@ -29,7 +29,17 @@ public final class SubstitutionMap: @unchecked Sendable {
         while usedFakes.contains(fake) || fake == real {
             nudge += 7
             fake = Synthetics.fakeFor(kind: kind, real: real, nudge: nudge)
-            if nudge > 700 { fake = "\(fake)-\(nudge)"; break }   // pathological guard
+            if nudge > 700 {
+                // Pool exhausted (more distinct reals than the Synthetics pool
+                // holds). Uniquify with a counter — the suffix must itself be
+                // checked against usedFakes or colliding fakes silently
+                // overwrite fakeToReal and rehydration returns WRONG reals.
+                let base = fake
+                var n = 2
+                repeat { fake = "\(base) \(n)"; n += 1 }
+                    while usedFakes.contains(fake) || fake == real
+                break
+            }
         }
         register(real: real, fake: fake)
         return fake
@@ -43,7 +53,13 @@ public final class SubstitutionMap: @unchecked Sendable {
         while usedFakes.contains(fake) || fake == real {
             nudge += 7
             fake = Synthetics.fakeForHardID(kind: kind, real: real, nudge: nudge)
-            if nudge > 700 { fake = "\(fake)\(nudge)"; break }
+            if nudge > 700 {
+                let base = fake                       // same uniquify-on-exhaustion as bind()
+                var n = 2
+                repeat { fake = "\(base)\(n)"; n += 1 }
+                    while usedFakes.contains(fake) || fake == real
+                break
+            }
         }
         register(real: real, fake: fake)
         return fake
